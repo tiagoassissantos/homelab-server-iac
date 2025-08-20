@@ -1,0 +1,170 @@
+#!/usr/bin/nft -f
+
+# Complete nftables configuration for K3s with MetalLB
+# This configuration allows proper Kubernetes networking while maintaining security
+
+# Flush existing rules
+flush ruleset
+
+table inet k3s {
+  # Define sets for better rule organization
+  set cluster_cidrs {
+    type ipv4_addr
+    flags interval
+    elements = {
+      10.42.0.0/16,    # K3s pod CIDR
+      10.43.0.0/16,    # K3s service CIDR
+      10.0.0.0/24      # Local network (adjust if needed)
+    }
+  }
+
+  set metallb_ips {
+    type ipv4_addr
+    flags interval
+    elements = {
+      10.0.0.101-10.0.0.250  # MetalLB IP range
+    }
+  }
+
+  set k8s_api_ports {
+    type inet_service
+    elements = {
+      6443,     # Kubernetes API server
+      2379,     # etcd client requests
+      2380,     # etcd peer communication
+      10250,    # Kubelet API (CRITICAL for metrics-server)
+      10251,    # kube-scheduler
+      10252,    # kube-controller-manager
+      10256     # kube-proxy health check
+    }
+  }
+
+  set k8s_node_ports {
+    type inet_service
+    flags interval
+    elements = {
+      30000-32767  # NodePort range
+    }
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    # Allow loopback
+    iif "lo" accept
+
+    # Allow established and related connections
+    ct state established,related accept
+
+    # Allow SSH
+    tcp dport 22 accept
+
+    # Allow ICMP/ICMPv6 (ping, path MTU discovery, etc.)
+    meta l4proto { icmp, ipv6-icmp } accept
+
+    # Allow Kubernetes API ports from anywhere (adjust source if needed)
+    tcp dport @k8s_api_ports accept
+
+    # Allow MetalLB controller metrics/webhook
+    tcp dport { 7472, 9443 } accept
+
+    # Allow DNS queries to Pi-hole
+    tcp dport { 53, 5353 } accept
+    udp dport { 53, 5353 } accept
+
+    # Allow HTTP/HTTPS for web services
+    tcp dport { 80, 443 } accept
+
+    # Allow Flannel VXLAN (K3s default CNI)
+    udp dport 8472 accept
+
+    # Allow NodePort range
+    tcp dport @k8s_node_ports accept
+    udp dport @k8s_node_ports accept
+
+    # Allow BGP for MetalLB (if using BGP mode)
+    tcp dport 179 accept
+
+    # Allow traffic from cluster networks
+    ip saddr @cluster_cidrs accept
+    ip daddr @cluster_cidrs accept
+
+    # Allow traffic from/to MetalLB IPs
+    ip saddr @metallb_ips accept
+    ip daddr @metallb_ips accept
+
+    # Log dropped packets (optional, for debugging)
+    # limit rate 5/minute log prefix "[nftables] INPUT DROP: "
+
+    # Drop everything else
+    drop
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+
+    # Allow established and related connections
+    ct state established,related accept
+
+    # Allow all forwarding for cluster networks (pods, services)
+    ip saddr @cluster_cidrs accept
+    ip daddr @cluster_cidrs accept
+
+    # Allow forwarding for MetalLB traffic
+    ip saddr @metallb_ips accept
+    ip daddr @metallb_ips accept
+
+    # Allow container interface forwarding
+    iifname { "cni*", "flannel*", "veth*", "docker*" } accept
+    oifname { "cni*", "flannel*", "veth*", "docker*" } accept
+
+    # Allow bridge forwarding (for container networking)
+    iifname "br-*" accept
+    oifname "br-*" accept
+
+    # Allow Flannel VXLAN forwarding
+    udp dport 8472 accept
+
+    # Log dropped forwards (optional, for debugging)
+    # limit rate 5/minute log prefix "[nftables] FORWARD DROP: "
+
+    # Drop everything else
+    drop
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+
+    # Allow all outbound traffic
+    # K3s components need to communicate freely outbound
+    accept
+  }
+
+  # NAT rules for container networking (if needed)
+  chain nat_postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+
+    # Masquerade traffic from pods going to external networks
+    ip saddr { 10.42.0.0/16, 10.43.0.0/16 } oifname != { "cni*", "flannel*", "veth*" } masquerade
+  }
+
+  chain nat_prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+
+    # Allow NodePort DNAT (handled by kube-proxy, just allow the traffic)
+    accept
+  }
+}
+
+# Additional table for mangle operations (if needed for advanced routing)
+table inet k3s_mangle {
+  chain mangle_prerouting {
+    type filter hook prerouting priority mangle; policy accept;
+    accept
+  }
+
+  chain mangle_output {
+    type route hook output priority mangle; policy accept;
+    accept
+  }
+}
