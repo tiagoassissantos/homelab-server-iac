@@ -1,0 +1,29 @@
+# === k3s ===
+k3s_version: v1.33.3+k3s1
+k3s_channel: stable
+k3s_install_extra_args: "--write-kubeconfig-mode 644 --disable servicelb" # disable k3s servicelb, use MetalLB instead
+
+# === MetalLB ===
+metallb_version: 0.15.2
+# A free range in your LAN that MetalLB can announce
+metallb_address_pool: 10.0.0.101-10.0.0.250
+
+# === Domains & TLS ===
+base_domain: "homelab.contdiscovery.lan"
+tls_email: "tstos.82@gmail.com"
+tls_mode: "selfsigned" # options: letsencrypt | selfsigned
+
+# The FQDN for Argo Workflows
+argo_host: "argo.{{ base_domain }}"
+
+# === Pi-hole ===
+pihole_namespace: "pihole"
+pihole_lb_ip: "10.0.0.101" # pick one IP inside the MetalLB range above
+pihole_dns_port: 5353 # external DNS port (avoiding conflict with host port 53)
+pihole_password: "5JdN&%2Gq7s" # web admin password
+pihole_dns1: "8.8.8.8"
+pihole_dns2: "1.1.1.1"
+
+# === Argo Workflows ===
+argo_namespace: "argo"
+argo_chart_version: "0.45.22" # chart version (iohub?). We'll pull from argo repo

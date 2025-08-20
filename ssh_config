@@ -1,0 +1,23 @@
+Host k3s-1
+    HostName 10.0.0.10
+    User tiago
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+    ConnectTimeout 30
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+
+Host 10.0.0.10
+    HostName 10.0.0.10
+    User tiago
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+    ConnectTimeout 30
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
