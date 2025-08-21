@@ -144,6 +144,7 @@
       ignore_errors: true
 
     - name: Flush all existing nftables rules
+      tags: [flush_fw_rules]
       shell: |
         nft flush ruleset || true
 
@@ -155,6 +156,7 @@
         create: yes
 
     - name: Create complete nftables configuration replacing default Alpine firewall
+      tags: [firewall_config]
       copy:
         dest: /etc/nftables.nft
         mode: "0644"
@@ -166,6 +168,27 @@
 
           # Flush all existing rules
           flush ruleset
+
+          table inet filter {
+            chain input {
+              type filter hook input priority 0;
+              policy accept;   # or accept, depending on your config
+
+              # allow Pi-hole DNS
+              tcp dport 53 accept
+              udp dport 53 accept
+
+              ip daddr {{ pihole_lb_ip }} udp dport 53 accept
+              ip daddr {{ pihole_lb_ip }} tcp dport 53 accept
+            }
+
+            chain forward {
+              type filter hook forward priority 0;
+              policy accept;
+              ip daddr {{ pihole_lb_ip }} udp dport 53 accept
+              ip daddr {{ pihole_lb_ip }} tcp dport 53 accept
+            }
+          }
 
           table inet k3s_complete {
             chain input {
@@ -305,6 +328,7 @@
           }
 
     - name: Enable and start nftables with new configuration
+      tags: [enable_fw_rules]
       service:
         name: nftables
         enabled: yes
@@ -559,6 +583,7 @@
             password: "{{ pihole_password }}"
 
     - name: Deploy Pi-hole
+      tags: deploy_pihole
       kubernetes.core.k8s:
         kubeconfig: "/home/{{ ansible_user }}/.kube/config"
         definition:
@@ -619,6 +644,7 @@
                     emptyDir: {}
 
     - name: Create Pi-hole Service
+      tags: [pihole_service]
       kubernetes.core.k8s:
         kubeconfig: "/home/{{ ansible_user }}/.kube/config"
         definition:
@@ -630,17 +656,18 @@
           spec:
             type: LoadBalancer
             loadBalancerIP: "{{ pihole_lb_ip }}"
+            externalTrafficPolicy: Local
             ports:
               - port: 80
                 targetPort: 80
                 name: http
-              - port: "{{ pihole_dns_port | int }}"
+              - name: dns-tcp
+                port: 53
                 targetPort: 53
-                name: dns-tcp
                 protocol: TCP
-              - port: "{{ pihole_dns_port | int }}"
+              - name: dns-udp
+                port: 53
                 targetPort: 53
-                name: dns-udp
                 protocol: UDP
             selector:
               app: pihole

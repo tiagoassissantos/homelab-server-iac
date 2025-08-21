@@ -9,7 +9,7 @@ metallb_version: 0.15.2
 metallb_address_pool: 10.0.0.101-10.0.0.250
 
 # === Domains & TLS ===
-base_domain: "homelab.contdiscovery.lan"
+base_domain: "contdiscovery.lab"
 tls_email: "tstos.82@gmail.com"
 tls_mode: "selfsigned" # options: letsencrypt | selfsigned
 
@@ -18,9 +18,10 @@ argo_host: "argo.{{ base_domain }}"
 
 # === Pi-hole ===
 pihole_namespace: "pihole"
-pihole_lb_ip: "10.0.0.101" # pick one IP inside the MetalLB range above
+pihole_lb_ip: "10.0.0.250"
+pihole_host: "pihole.{{ base_domain }}"
 pihole_dns_port: 5353 # external DNS port (avoiding conflict with host port 53)
-pihole_password: "5JdN&%2Gq7s" # web admin password
+pihole_password: "{{ lookup('password', '/dev/null length=16') }}"
 pihole_dns1: "8.8.8.8"
 pihole_dns2: "1.1.1.1"
 
