@@ -28,3 +28,4 @@ pihole_dns2: "1.1.1.1"
 # === Argo Workflows ===
 argo_namespace: "argo"
 argo_chart_version: "0.45.22" # chart version (iohub?). We'll pull from argo repo
+argo_lb_ip: "10.0.0.249"

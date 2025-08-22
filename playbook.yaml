@@ -155,42 +155,18 @@
         line: 'include "/etc/nftables.d/*.nft";'
         create: yes
 
-    - name: Create complete nftables configuration replacing default Alpine firewall
-      tags: [firewall_config]
+    - name: Create complete nftables configuration for MetalLB compatibility
       copy:
         dest: /etc/nftables.nft
         mode: "0644"
         backup: yes
         content: |
           #!/usr/bin/nft -f
-          # Complete nftables configuration for K3s on Alpine/PostmarketOS
-          # This replaces the default Alpine firewall completely
 
           # Flush all existing rules
           flush ruleset
 
           table inet filter {
-            chain input {
-              type filter hook input priority 0;
-              policy accept;   # or accept, depending on your config
-
-              # allow Pi-hole DNS
-              tcp dport 53 accept
-              udp dport 53 accept
-
-              ip daddr {{ pihole_lb_ip }} udp dport 53 accept
-              ip daddr {{ pihole_lb_ip }} tcp dport 53 accept
-            }
-
-            chain forward {
-              type filter hook forward priority 0;
-              policy accept;
-              ip daddr {{ pihole_lb_ip }} udp dport 53 accept
-              ip daddr {{ pihole_lb_ip }} tcp dport 53 accept
-            }
-          }
-
-          table inet k3s_complete {
             chain input {
               type filter hook input priority filter; policy drop;
 
@@ -203,49 +179,25 @@
               # Drop invalid connections
               ct state invalid drop comment "Drop invalid connections"
 
-              # Reject AUTH quickly to make connections fail fast
-              tcp dport 113 reject comment "Reject AUTH to make it fail fast"
-
               # Allow ICMP/ICMPv6
               ip protocol icmp icmp type { echo-reply, destination-unreachable, echo-request, time-exceeded, parameter-problem } accept comment "Accept ICMP"
               icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-request, echo-reply } accept comment "Accept basic IPv6 functionality"
 
-              # Allow IPv6 SLAAC and DHCPv6
-              icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } ip6 hoplimit 255 accept comment "Allow IPv6 SLAAC"
-              ip6 saddr fe80::/10 udp sport 547 udp dport 546 accept comment "Accept DHCPv6 replies from IPv6 link-local addresses"
-
-              # PostmarketOS specific interface rules (preserve existing functionality)
-              iifname "wwan*" drop comment "drop all connections on wwan"
-              iifname "usb*" udp dport 67 accept comment "accept incoming DHCP on usb*"
-              iifname "wlan*" udp dport 67 accept comment "accept incoming DHCP on wlan*"
-              iifname "p2p-wlan*" udp dport 67 accept comment "accept incoming DHCP on p2p-wlan*"
-              iifname "usb*" accept comment "Allow incoming network traffic from USB"
-
               # Allow SSH
               tcp dport 22 accept comment "accept SSH"
 
-              # DNS for PostmarketOS interfaces
-              iifname "wlan*" tcp dport 53 accept comment "Accept DNS over TCP on wlan*"
-              iifname "wlan*" udp dport 53 accept comment "Accept DNS over UDP on wlan*"
+              # DNS traffic (critical for Pi-hole)
+              tcp dport { 53, 5353 } accept comment "DNS TCP"
+              udp dport { 53, 5353 } accept comment "DNS UDP"
 
-              # Kubernetes API server
+              # Kubernetes services
               tcp dport 6443 accept comment "Kubernetes API server"
-
-              # Kubelet API (CRITICAL for metrics-server)
               tcp dport 10250 accept comment "Kubelet API"
-
-              # etcd
               tcp dport { 2379, 2380 } accept comment "etcd client and peer"
-
-              # kube-proxy health check
               tcp dport 10256 accept comment "kube-proxy health check"
 
               # MetalLB
               tcp dport { 7472, 9443 } accept comment "MetalLB controller and webhook"
-
-              # DNS (general and Pi-hole)
-              tcp dport { 53, 5353 } accept comment "DNS TCP"
-              udp dport { 53, 5353 } accept comment "DNS UDP"
 
               # Web services
               tcp dport { 80, 443 } accept comment "HTTP and HTTPS"
@@ -257,73 +209,70 @@
               tcp dport 30000-32767 accept comment "NodePort TCP range"
               udp dport 30000-32767 accept comment "NodePort UDP range"
 
-              # Allow all traffic from/to Kubernetes networks
+              # Allow Kubernetes networks
               ip saddr 10.42.0.0/16 accept comment "Pod network source"
               ip daddr 10.42.0.0/16 accept comment "Pod network destination"
               ip saddr 10.43.0.0/16 accept comment "Service network source"
               ip daddr 10.43.0.0/16 accept comment "Service network destination"
 
-              # Add additional nftables rules for service routing
-              ip daddr 127.0.0.1 accept comment "Localhost API access"
-              ip saddr 127.0.0.1 accept comment "Localhost API responses"
-
               # Allow local network
               ip saddr 10.0.0.0/24 accept comment "Local network source"
               ip daddr 10.0.0.0/24 accept comment "Local network destination"
 
-              # Log and drop everything else
-              limit rate 5/minute log prefix "[nftables] INPUT DROP: "
+              # PostmarketOS specific rules
+              iifname "wwan*" drop comment "drop all connections on wwan"
+              iifname "usb*" udp dport 67 accept comment "accept incoming DHCP on usb*"
+              iifname "wlan*" udp dport 67 accept comment "accept incoming DHCP on wlan*"
+              iifname "p2p-wlan*" udp dport 67 accept comment "accept incoming DHCP on p2p-wlan*"
+              iifname "usb*" accept comment "Allow incoming network traffic from USB"
+              iifname "wlan*" tcp dport 53 accept comment "Accept DNS over TCP on wlan*"
+              iifname "wlan*" udp dport 53 accept comment "Accept DNS over UDP on wlan*"
+
               drop
             }
 
             chain forward {
-              type filter hook forward priority -150; policy accept;
-
-              # PostmarketOS specific forwarding (preserve existing functionality)
-              iifname "wlan*" accept comment "Accept forwarding from wlan*"
-              iifname "usb*" accept comment "Allow outgoing network traffic from USB"
+              type filter hook forward priority filter; policy accept;
 
               # Allow established connections
               ct state established,related accept comment "accept established connections"
 
-              # Allow all Kubernetes traffic to be handled by kube-proxy
+              # Allow all Kubernetes traffic
               ip saddr 10.42.0.0/16 accept comment "Pod network forwarding"
               ip daddr 10.42.0.0/16 accept comment "Pod network forwarding"
               ip saddr 10.43.0.0/16 accept comment "Service network forwarding"
               ip daddr 10.43.0.0/16 accept comment "Service network forwarding"
 
-              # Add additional nftables rules for service routing
-              ip daddr 127.0.0.1 accept comment "Forward to localhost API"
-              ip saddr 127.0.0.1 accept comment "Forward from localhost API"
-
               # Allow container interface traffic
               iifname { "cni*", "flannel*", "veth*", "docker*", "br-*" } accept comment "Container interfaces"
               oifname { "cni*", "flannel*", "veth*", "docker*", "br-*" } accept comment "Container interfaces"
 
+              # PostmarketOS specific forwarding
+              iifname "wlan*" accept comment "Accept forwarding from wlan*"
+              iifname "usb*" accept comment "Allow outgoing network traffic from USB"
+
               # Allow Flannel VXLAN forwarding
               udp dport 8472 accept comment "Flannel VXLAN forwarding"
 
-              # Default accept for forwarding to let kube-proxy work
               accept
             }
 
             chain output {
               type filter hook output priority filter; policy accept;
-              # Allow all outbound traffic
               accept
             }
+          }
 
-            # NAT rules for container networking (minimal to avoid conflicts with kube-proxy)
-            chain nat_postrouting {
-              type nat hook postrouting priority srcnat; policy accept;
-              # Let kube-proxy handle most NAT, only add essential rules
-              ip saddr 10.42.0.0/16 oifname != { "cni*", "flannel*", "veth*", "docker*" } masquerade comment "Pod to external NAT"
-            }
-
-            chain nat_prerouting {
+          table inet nat {
+            chain prerouting {
               type nat hook prerouting priority dstnat; policy accept;
-              # Allow all - kube-proxy will handle service routing
-              accept
+              # Let kube-proxy handle service routing
+            }
+
+            chain postrouting {
+              type nat hook postrouting priority srcnat; policy accept;
+              # Essential NAT for pod traffic going external
+              ip saddr 10.42.0.0/16 oifname != { "cni*", "flannel*", "veth*", "docker*", "br-*" } masquerade comment "Pod to external NAT"
             }
           }
 
@@ -340,7 +289,7 @@
 
     - name: Verify K3s nftables rules are loaded
       shell: |
-        nft list ruleset | grep -q "k3s_complete" && echo "SUCCESS: K3s nftables rules loaded"
+        nft list ruleset | grep -q "inet filter" && echo "SUCCESS: K3s inet filter rules loaded"
       register: nft_verification
       retries: 3
       delay: 5
@@ -557,6 +506,7 @@
         state: present
 
     - name: Create Pi-hole ConfigMap
+      tags: pihone_configmap
       kubernetes.core.k8s:
         kubeconfig: "/home/{{ ansible_user }}/.kube/config"
         definition:
@@ -643,7 +593,7 @@
                   - name: dnsmasq-data
                     emptyDir: {}
 
-    - name: Create Pi-hole Service
+    - name: Create Pi-hole Service with proper traffic policy
       tags: [pihole_service]
       kubernetes.core.k8s:
         kubeconfig: "/home/{{ ansible_user }}/.kube/config"
@@ -656,7 +606,7 @@
           spec:
             type: LoadBalancer
             loadBalancerIP: "{{ pihole_lb_ip }}"
-            externalTrafficPolicy: Local
+            externalTrafficPolicy: Cluster
             ports:
               - port: 80
                 targetPort: 80
@@ -727,6 +677,7 @@
         kubeconfig: "/home/{{ ansible_user }}/.kube/config"
 
     - name: Install Argo Workflows
+      tags: install_argo_workflows
       kubernetes.core.helm:
         name: argo-workflows
         chart_ref: argo/argo-workflows
@@ -736,6 +687,7 @@
           server:
             serviceType: LoadBalancer
             servicePort: 80
+            loadBalancerIP: "{{ argo_lb_ip }}"
             ingress:
               enabled: true
               hosts:
@@ -769,6 +721,90 @@
             commonName: "{{ argo_host }}"
             dnsNames:
               - "{{ argo_host }}"
+
+    # === Create Argo Workflows Access Token ===
+    - name: Create Argo admin service account
+      kubernetes.core.k8s:
+        kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: argo-admin
+            namespace: "{{ argo_namespace }}"
+
+    - name: Create Argo admin role
+      kubernetes.core.k8s:
+        kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: argo-admin
+            namespace: "{{ argo_namespace }}"
+          rules:
+            - apiGroups: ["argoproj.io"]
+              resources:
+                [
+                  "workflows",
+                  "workflowtemplates",
+                  "cronworkflows",
+                  "clusterworkflowtemplates",
+                ]
+              verbs:
+                ["list", "get", "create", "update", "delete", "patch", "watch"]
+            - apiGroups: [""]
+              resources: ["pods", "pods/log"]
+              verbs: ["list", "get", "watch"]
+
+    - name: Create Argo admin role binding
+      kubernetes.core.k8s:
+        kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: argo-admin
+            namespace: "{{ argo_namespace }}"
+          subjects:
+            - kind: ServiceAccount
+              name: argo-admin
+              namespace: "{{ argo_namespace }}"
+          roleRef:
+            kind: Role
+            name: argo-admin
+            apiGroup: rbac.authorization.k8s.io
+
+    - name: Create Argo admin token secret
+      kubernetes.core.k8s:
+        kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: argo-admin.service-account-token
+            namespace: "{{ argo_namespace }}"
+            annotations:
+              kubernetes.io/service-account.name: argo-admin
+          type: kubernetes.io/service-account-token
+
+    - name: Wait for token to be generated
+      wait_for:
+        timeout: 10
+
+    - name: Get Argo access token
+      kubernetes.core.k8s_info:
+        kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+        api_version: v1
+        kind: Secret
+        name: argo-admin.service-account-token
+        namespace: "{{ argo_namespace }}"
+      register: argo_token_secret
+
+    - name: Display Argo access token
+      debug:
+        msg: "Argo Token: Bearer {{ argo_token_secret.resources[0].data.token | b64decode }}"
+      when: argo_token_secret.resources.data.token is defined
 
   handlers:
     - name: restart systemd-resolved
