@@ -55,11 +55,11 @@ The main configuration is in `group_vars/all.yaml`. Key settings:
 # MetalLB IP range (adjust for your network)
 metallb_address_pool: 10.0.0.101-10.0.0.250
 
-# Pi-hole will get this specific IP
-pihole_lb_ip: "10.0.0.101"
+# Pi-hole will get this specific IP (matches `group_vars/all.yaml`)
+pihole_lb_ip: "10.0.0.250"
 
-# Your domain (adjust as needed)
-base_domain: "homelab.contdiscovery.lan"
+# Your domain (adjust as needed) — default in the repo
+base_domain: "contdiscovery.lab"
 ```
 
 ### DNS Configuration
@@ -74,8 +74,13 @@ pihole_dns_port: "5353"
 
 ### Security
 ```yaml
-# Pi-hole admin password (change this and consider using Ansible Vault!)
-pihole_password: "strong_password"
+# Pi-hole admin password
+# By default this repository generates a random password at playbook runtime
+# (see `group_vars/all.yaml`: `pihole_password: "{{ lookup('password', '/dev/null length=16') }}").`
+# To use a fixed password, override `pihole_password` in `group_vars` or store
+# it securely with Ansible Vault.
+# Example (NOT recommended to commit):
+# pihole_password: "strong_password"
 
 # TLS configuration
 tls_mode: "selfsigned"  # or "letsencrypt"
@@ -84,14 +89,18 @@ tls_email: "your-email@example.com"
 
 ## Deployment
 
-### Step 1: Setup Environment
+# Step 1: Setup Environment
 
 ```bash
 # Clone or navigate to the project directory
 cd homelab_server_iac
 
-# Run setup script to install dependencies
-./setup.sh
+# Install required Ansible collections/roles listed in requirements.yml
+ansible-galaxy collection install -r requirements.yml
+# If roles are listed in the requirements file as roles:
+ansible-galaxy role install -r requirements.yml
+
+# (Optional) You can create a simple `setup.sh` wrapper if you prefer a single command.
 ```
 
 ### Step 2: Verify Connectivity
@@ -138,20 +147,20 @@ kubectl get services --all-namespaces
 ### Access Services
 
 #### Pi-hole Admin Interface
-- **URL**: `http://10.0.0.101/admin`
-- **Password**: As configured in `pihole_password`
+- **URL**: `http://10.0.0.250/admin` (or whatever `pihole_lb_ip` you set in `group_vars/all.yaml`)
+- **Password**: As configured in `pihole_password` (by default a random password is generated at runtime)
 
 #### Argo Workflows
-- **URL**: `https://argo.homelab.contdiscovery.lan`
+- **URL**: `https://argo.contdiscovery.lab` (or `argo.{{ base_domain }}` depending on your configuration)
 - **Note**: Add this domain to your local hosts file or configure DNS
 
 #### Configure DNS
 
 To use Pi-hole as your network DNS (note: Pi-hole runs on port 5353):
 
-1. **Router Configuration**: Set your router's DNS to `10.0.0.101`
+1. **Router Configuration**: Set your router's DNS to `10.0.0.250` (or the `pihole_lb_ip` you've configured)
 2. **Local Machine**: Update `/etc/resolv.conf` or network settings
-3. **Test**: `nslookup google.com 10.0.0.101`
+3. **Test**: `nslookup google.com 10.0.0.250`
 
 ### Kubernetes Dashboard (Optional)
 
@@ -203,7 +212,7 @@ kubectl get service pihole-service -n pihole
 #### 4. DNS Resolution Issues
 ```bash
 # Test Pi-hole directly (note: Pi-hole DNS runs on port 5353)
-dig @10.0.0.101 -p 5353 google.com
+dig @10.0.0.250 -p 5353 google.com
 
 # Check coredns configuration
 kubectl get configmap coredns -n kube-system -o yaml
