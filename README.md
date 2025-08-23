@@ -1,6 +1,6 @@
 # Homelab Server Infrastructure as Code
 
-This Ansible playbook configures an Alpine Linux 3.23.0_alpha server running on ARM64 (Qualcomm Snapdragon 732G) with a complete k3s Kubernetes cluster, including Pi-hole DNS server and Argo Workflows.
+This Ansible playbook configures an Alpine Linux server (e.g., v3.22) running on ARM64 (Qualcomm Snapdragon 732G) with a complete k3s Kubernetes cluster, including Pi-hole DNS server and Argo Workflows.
 
 ## Features
 
@@ -40,8 +40,8 @@ This Ansible playbook configures an Alpine Linux 3.23.0_alpha server running on 
 - Python 3.6+ with pip
 - SSH key-based access to the Alpine server
 
-### Alpine Linux Server
-- Alpine Linux 3.23.0_alpha (ARM64)
+### Target Server
+- Alpine Linux (e.g., v3.22) (ARM64)
 - SSH access configured
 - Internet connectivity
 - Static IP address (recommended)
@@ -74,7 +74,7 @@ pihole_dns_port: "5353"
 
 ### Security
 ```yaml
-# Pi-hole admin password (change this!)
+# Pi-hole admin password (change this and consider using Ansible Vault!)
 pihole_password: "strong_password"
 
 # TLS configuration
@@ -125,7 +125,7 @@ The deployment will take approximately 15-30 minutes depending on your internet 
 
 ```bash
 # SSH to your server
-ssh tiago@10.0.0.10
+ssh <your_user>@<your_server_ip>
 
 # Check cluster status
 kubectl get nodes
@@ -174,7 +174,7 @@ kubectl get secret $(kubectl get serviceaccount dashboard-admin-sa -o jsonpath="
 #### 1. Connection Issues
 ```bash
 # Check if SSH key is correctly configured
-ssh -i ~/.ssh/id_ed25519 tiago@10.0.0.10
+ssh -i ~/.ssh/id_ed25519 <your_user>@<your_server_ip>
 
 # Verify inventory file
 cat inventory/hosts.ini
@@ -293,12 +293,12 @@ To add worker nodes:
 
 1. Update `inventory/hosts.ini`:
 ```ini
-[masters]
-k3s-1 ansible_host=10.0.0.10 ansible_user=tiago ansible_ssh_private_key_file=~/.ssh/id_ed25519
+[k3s_master]
+k3s-master-1 ansible_host=10.0.0.10 ansible_user=<your_user> ansible_ssh_private_key_file=~/.ssh/id_ed25519
 
-[workers]
-k3s-2 ansible_host=10.0.0.11 ansible_user=tiago ansible_ssh_private_key_file=~/.ssh/id_ed25519
-k3s-3 ansible_host=10.0.0.12 ansible_user=tiago ansible_ssh_private_key_file=~/.ssh/id_ed25519
+[k3s_worker]
+k3s-worker-1 ansible_host=10.0.0.11 ansible_user=<your_user> ansible_ssh_private_key_file=~/.ssh/id_ed25519
+k3s-worker-2 ansible_host=10.0.0.12 ansible_user=<your_user> ansible_ssh_private_key_file=~/.ssh/id_ed25519
 ```
 
 2. Add worker node tasks to the playbook
