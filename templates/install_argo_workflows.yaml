@@ -1,0 +1,59 @@
+- name: Create Argo namespace
+  kubernetes.core.k8s:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    name: "{{ argo_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Add Argo Helm repository
+  kubernetes.core.helm_repository:
+    name: argo
+    repo_url: https://argoproj.github.io/argo-helm
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+
+- name: Install Argo Workflows
+  tags: install_argo_workflows
+  kubernetes.core.helm:
+    name: argo-workflows
+    chart_ref: argo/argo-workflows
+    release_namespace: "{{ argo_namespace }}"
+    chart_version: "{{ argo_chart_version }}"
+    values:
+      server:
+        serviceType: LoadBalancer
+        servicePort: 80
+        loadBalancerIP: "{{ argo_lb_ip }}"
+        ingress:
+          enabled: true
+          hosts:
+            - "{{ argo_host }}"
+          paths:
+            - /
+          pathType: Prefix
+          tls:
+            - secretName: argo-tls
+              hosts:
+                - "{{ argo_host }}"
+      workflow:
+        serviceAccount:
+          create: true
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+
+- name: Create Argo Workflows TLS certificate
+  kubernetes.core.k8s:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: argo-tls
+        namespace: "{{ argo_namespace }}"
+      spec:
+        secretName: argo-tls
+        issuerRef:
+          name: selfsigned-issuer
+          kind: ClusterIssuer
+        commonName: "{{ argo_host }}"
+        dnsNames:
+          - "{{ argo_host }}"

@@ -1,0 +1,55 @@
+- name: Download k3s install script
+  get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: "0755"
+
+- name: Install k3s server
+  shell: |
+    INSTALL_K3S_VERSION="{{ k3s_version }}" \
+    INSTALL_K3S_CHANNEL="{{ k3s_channel }}" \
+    sh /tmp/k3s-install.sh server {{ k3s_install_extra_args }} \
+    --kube-apiserver-arg="bind-address=0.0.0.0" \
+    --kube-apiserver-arg="advertise-address={{ ansible_default_ipv4.address }}"
+  args:
+    creates: /usr/local/bin/k3s
+
+- name: Wait for k3s to be ready
+  wait_for:
+    port: 6443
+    host: localhost
+    delay: 30
+    timeout: 600
+
+- name: Test Kubernetes API connectivity from pod network
+  shell: |
+    kubectl run test-api-connectivity --image=alpine:latest --rm -i --restart=Never -- sh -c '
+    apk add --no-cache curl >/dev/null 2>&1
+    echo "Testing API connectivity from pod..."
+    curl -k -m 10 https://kubernetes.default.svc.cluster.local/healthz || echo "API test failed"
+    curl -k -m 10 https://10.43.0.1:443/healthz || echo "Service IP test failed"
+    '
+  ignore_errors: true
+  register: api_test
+
+- name: Display API connectivity test results
+  debug:
+    var: api_test.stdout_lines
+  when: api_test.stdout_lines is defined
+
+- name: Create .kube directory
+  file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Copy k3s kubeconfig
+  copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+    remote_src: yes

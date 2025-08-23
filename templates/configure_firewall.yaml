@@ -1,0 +1,193 @@
+- name: Ensure nftables package is present
+  apk:
+    name: nftables
+    state: present
+    update_cache: true
+
+- name: Ensure nftables include directory exists
+  file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Remove conflicting firewall packages
+  apk:
+    name:
+      - iptables-legacy
+      - awall
+    state: absent
+  ignore_errors: true
+
+- name: Remove old nftables.d directory to avoid conflicts
+  file:
+    path: /etc/nftables.d
+    state: absent
+
+- name: Ensure iptables uses nft backend (Alpine)
+  shell: |
+    if command -v update-alternatives >/dev/null 2>&1; then
+      if [ -e /sbin/iptables-nft ]; then update-alternatives --set iptables /sbin/iptables-nft || true; fi
+      if [ -e /sbin/ip6tables-nft ]; then update-alternatives --set ip6tables /sbin/ip6tables-nft || true; fi
+    fi
+
+- name: Stop nftables service before flushing
+  service:
+    name: nftables
+    state: stopped
+  ignore_errors: true
+
+- name: Flush all existing nftables rules
+  tags: [flush_fw_rules]
+  shell: |
+    nft flush ruleset || true
+
+- name: Ensure /etc/nftables.nft includes /etc/nftables.d/*.nft
+  lineinfile:
+    path: /etc/nftables.nft
+    regexp: '^include "/etc/nftables.d/\*\.nft";$'
+    line: 'include "/etc/nftables.d/*.nft";'
+    create: yes
+
+- name: Create complete nftables configuration for MetalLB compatibility
+  copy:
+    dest: /etc/nftables.nft
+    mode: "0644"
+    backup: yes
+    content: |
+      #!/usr/bin/nft -f
+
+      # Flush all existing rules
+      flush ruleset
+
+      table inet filter {
+        chain input {
+          type filter hook input priority filter; policy drop;
+
+          # Allow loopback traffic
+          iifname "lo" accept comment "Accept any localhost traffic"
+
+          # Allow established and related connections
+          ct state established,related accept comment "Accept traffic originated from us"
+
+          # Drop invalid connections
+          ct state invalid drop comment "Drop invalid connections"
+
+          # Allow ICMP/ICMPv6
+          ip protocol icmp icmp type { echo-reply, destination-unreachable, echo-request, time-exceeded, parameter-problem } accept comment "Accept ICMP"
+          icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-request, echo-reply } accept comment "Accept basic IPv6 functionality"
+
+          # Allow SSH
+          tcp dport 22 accept comment "accept SSH"
+
+          # DNS traffic (critical for Pi-hole)
+          tcp dport { 53, 5353 } accept comment "DNS TCP"
+          udp dport { 53, 5353 } accept comment "DNS UDP"
+
+          # Kubernetes services
+          tcp dport 6443 accept comment "Kubernetes API server"
+          tcp dport 10250 accept comment "Kubelet API"
+          tcp dport { 2379, 2380 } accept comment "etcd client and peer"
+          tcp dport 10256 accept comment "kube-proxy health check"
+
+          # MetalLB
+          tcp dport { 7472, 9443 } accept comment "MetalLB controller and webhook"
+
+          # Web services
+          tcp dport { 80, 443 } accept comment "HTTP and HTTPS"
+
+          # Flannel VXLAN
+          udp dport 8472 accept comment "Flannel VXLAN"
+
+          # NodePort range
+          tcp dport 30000-32767 accept comment "NodePort TCP range"
+          udp dport 30000-32767 accept comment "NodePort UDP range"
+
+          # Allow Kubernetes networks
+          ip saddr 10.42.0.0/16 accept comment "Pod network source"
+          ip daddr 10.42.0.0/16 accept comment "Pod network destination"
+          ip saddr 10.43.0.0/16 accept comment "Service network source"
+          ip daddr 10.43.0.0/16 accept comment "Service network destination"
+
+          # Allow local network
+          ip saddr 10.0.0.0/24 accept comment "Local network source"
+          ip daddr 10.0.0.0/24 accept comment "Local network destination"
+
+          # PostmarketOS specific rules
+          iifname "wwan*" drop comment "drop all connections on wwan"
+          iifname "usb*" udp dport 67 accept comment "accept incoming DHCP on usb*"
+          iifname "wlan*" udp dport 67 accept comment "accept incoming DHCP on wlan*"
+          iifname "p2p-wlan*" udp dport 67 accept comment "accept incoming DHCP on p2p-wlan*"
+          iifname "usb*" accept comment "Allow incoming network traffic from USB"
+          iifname "wlan*" tcp dport 53 accept comment "Accept DNS over TCP on wlan*"
+          iifname "wlan*" udp dport 53 accept comment "Accept DNS over UDP on wlan*"
+
+          drop
+        }
+
+        chain forward {
+          type filter hook forward priority filter; policy accept;
+
+          # Allow established connections
+          ct state established,related accept comment "accept established connections"
+
+          # Allow all Kubernetes traffic
+          ip saddr 10.42.0.0/16 accept comment "Pod network forwarding"
+          ip daddr 10.42.0.0/16 accept comment "Pod network forwarding"
+          ip saddr 10.43.0.0/16 accept comment "Service network forwarding"
+          ip daddr 10.43.0.0/16 accept comment "Service network forwarding"
+
+          # Allow container interface traffic
+          iifname { "cni*", "flannel*", "veth*", "docker*", "br-*" } accept comment "Container interfaces"
+          oifname { "cni*", "flannel*", "veth*", "docker*", "br-*" } accept comment "Container interfaces"
+
+          # PostmarketOS specific forwarding
+          iifname "wlan*" accept comment "Accept forwarding from wlan*"
+          iifname "usb*" accept comment "Allow outgoing network traffic from USB"
+
+          # Allow Flannel VXLAN forwarding
+          udp dport 8472 accept comment "Flannel VXLAN forwarding"
+
+          accept
+        }
+
+        chain output {
+          type filter hook output priority filter; policy accept;
+          accept
+        }
+      }
+
+      table inet nat {
+        chain prerouting {
+          type nat hook prerouting priority dstnat; policy accept;
+          # Let kube-proxy handle service routing
+        }
+
+        chain postrouting {
+          type nat hook postrouting priority srcnat; policy accept;
+          # Essential NAT for pod traffic going external
+          ip saddr 10.42.0.0/16 oifname != { "cni*", "flannel*", "veth*", "docker*", "br-*" } masquerade comment "Pod to external NAT"
+        }
+      }
+
+- name: Enable and start nftables with new configuration
+  tags: [enable_fw_rules]
+  service:
+    name: nftables
+    enabled: yes
+    state: started
+
+- name: Wait for nftables service to be ready
+  wait_for:
+    timeout: 15
+
+- name: Verify K3s nftables rules are loaded
+  shell: |
+    nft list ruleset | grep -q "inet filter" && echo "SUCCESS: K3s inet filter rules loaded"
+  register: nft_verification
+  retries: 3
+  delay: 5
+  until: nft_verification.rc == 0
+
+- name: Display verification result
+  debug:
+    msg: "{{ nft_verification.stdout }}"

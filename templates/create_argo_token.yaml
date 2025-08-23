@@ -1,0 +1,81 @@
+- name: Create Argo admin service account
+  kubernetes.core.k8s:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: argo-admin
+        namespace: "{{ argo_namespace }}"
+
+- name: Create Argo admin role
+  kubernetes.core.k8s:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: argo-admin
+        namespace: "{{ argo_namespace }}"
+      rules:
+        - apiGroups: ["argoproj.io"]
+          resources:
+            [
+              "workflows",
+              "workflowtemplates",
+              "cronworkflows",
+              "clusterworkflowtemplates",
+            ]
+          verbs: ["list", "get", "create", "update", "delete", "patch", "watch"]
+        - apiGroups: [""]
+          resources: ["pods", "pods/log"]
+          verbs: ["list", "get", "watch"]
+
+- name: Create Argo admin role binding
+  kubernetes.core.k8s:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: argo-admin
+        namespace: "{{ argo_namespace }}"
+      subjects:
+        - kind: ServiceAccount
+          name: argo-admin
+          namespace: "{{ argo_namespace }}"
+      roleRef:
+        kind: Role
+        name: argo-admin
+        apiGroup: rbac.authorization.k8s.io
+
+- name: Create Argo admin token secret
+  kubernetes.core.k8s:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: argo-admin.service-account-token
+        namespace: "{{ argo_namespace }}"
+        annotations:
+          kubernetes.io/service-account.name: argo-admin
+      type: kubernetes.io/service-account-token
+
+- name: Wait for token to be generated
+  wait_for:
+    timeout: 10
+
+- name: Get Argo access token
+  kubernetes.core.k8s_info:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    api_version: v1
+    kind: Secret
+    name: argo-admin.service-account-token
+    namespace: "{{ argo_namespace }}"
+  register: argo_token_secret
+
+- name: Display Argo access token
+  debug:
+    msg: "Argo Token: Bearer {{ argo_token_secret.resources[0].data.token | b64decode }}"
+  when: argo_token_secret.resources.data.token is defined

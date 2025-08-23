@@ -1,0 +1,27 @@
+- name: Add cert-manager Helm repository
+  kubernetes.core.helm_repository:
+    name: jetstack
+    repo_url: https://charts.jetstack.io
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+
+- name: Install cert-manager
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: jetstack/cert-manager
+    release_namespace: cert-manager
+    create_namespace: true
+    values:
+      installCRDs: true
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+
+- name: Create self-signed ClusterIssuer
+  kubernetes.core.k8s:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: selfsigned-issuer
+      spec:
+        selfSigned: {}
+  when: tls_mode == "selfsigned"
