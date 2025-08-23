@@ -75,7 +75,7 @@ pihole_dns_port: "5353"
 ### Security
 ```yaml
 # Pi-hole admin password (change this!)
-pihole_password: "5JdN&%2Gq7s"
+pihole_password: "strong_password"
 
 # TLS configuration
 tls_mode: "selfsigned"  # or "letsencrypt"

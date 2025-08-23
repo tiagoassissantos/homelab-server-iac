@@ -10,7 +10,7 @@ metallb_address_pool: 10.0.0.101-10.0.0.250
 
 # === Domains & TLS ===
 base_domain: "contdiscovery.lab"
-tls_email: "tstos.82@gmail.com"
+tls_email: "email@test.com"
 tls_mode: "selfsigned" # options: letsencrypt | selfsigned
 
 # The FQDN for Argo Workflows
