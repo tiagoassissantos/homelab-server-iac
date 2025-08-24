@@ -7,6 +7,7 @@ This Ansible playbook configures an Alpine Linux server (e.g., v3.22) running on
 - ✅ **Shell Setup**: Installs and configures zsh with oh-my-zsh
 - ✅ **k3s Kubernetes**: Single-node k3s cluster with Traefik ingress
 - ✅ **MetalLB**: Load balancer for bare metal Kubernetes
+- ✅ **Docker Registry**: Private container registry for project images
 - ✅ **Pi-hole**: Network-wide ad blocking and DNS server
 - ✅ **Argo Workflows**: Workflow orchestration with HTTPS access
 - ✅ **cert-manager**: Automatic TLS certificate management
@@ -23,6 +24,10 @@ This Ansible playbook configures an Alpine Linux server (e.g., v3.22) running on
 │  │  │   Pi-hole   │  │    Argo     │  │   cert-manager  │ │ │
 │  │  │ (DNS Server)│  │ Workflows   │  │  (TLS Certs)    │ │ │
 │  │  └─────────────┘  └─────────────┘  └─────────────────┘ │ │
+│  │  ┌─────────────┐                                       │ │
+│  │  │   Docker    │                                       │ │
+│  │  │  Registry   │                                       │ │
+│  │  └─────────────┘                                       │ │
 │  │  ┌───────────────────────────────────────────────────┐ │ │
 │  │  │              MetalLB Load Balancer                │ │ │
 │  │  └───────────────────────────────────────────────────┘ │ │
@@ -58,6 +63,9 @@ metallb_address_pool: 10.0.0.101-10.0.0.250
 # Pi-hole will get this specific IP (matches `group_vars/all.yaml`)
 pihole_lb_ip: "10.0.0.250"
 
+# Docker Registry will get this specific IP
+registry_lb_ip: "10.0.0.248"
+
 # Your domain (adjust as needed) — default in the repo
 base_domain: "contdiscovery.lab"
 ```
@@ -70,6 +78,15 @@ pihole_dns2: "1.1.1.1"  # Cloudflare DNS
 
 # Pi-hole DNS port (using 5353 to avoid conflicts with host DNS)
 pihole_dns_port: "5353"
+```
+
+### Docker Registry Configuration
+```yaml
+# Registry settings
+registry_namespace: "registry"
+registry_lb_ip: "10.0.0.248"
+registry_host: "registry.contdiscovery.lab"
+registry_storage_size: "20Gi"
 ```
 
 ### Security
@@ -124,9 +141,24 @@ ansible-playbook -i inventory/hosts.ini playbook.yaml
 
 # Or run with verbose output for troubleshooting
 ansible-playbook -i inventory/hosts.ini playbook.yaml -v
+
+# To install only Docker Registry (after initial setup)
+ansible-playbook -i inventory/hosts.ini playbook-registry.yaml
 ```
 
 The deployment will take approximately 15-30 minutes depending on your internet connection.
+
+### Helper Scripts
+
+The repository includes several helper scripts for Docker Registry management:
+
+```bash
+# Get registry connection details and credentials
+./get-registry-credentials.sh
+
+# Test registry functionality and connectivity
+./test-registry.sh
+```
 
 ## Post-Deployment
 
@@ -153,6 +185,22 @@ kubectl get services --all-namespaces
 #### Argo Workflows
 - **URL**: `https://argo.contdiscovery.lab` (or `argo.{{ base_domain }}` depending on your configuration)
 - **Note**: Add this domain to your local hosts file or configure DNS
+
+#### Docker Registry
+- **Internal URL**: `http://10.0.0.248:5000` (or whatever `registry_lb_ip` you set)
+- **External URL**: `https://registry.contdiscovery.lab` (or `registry.{{ base_domain }}`)
+- **Authentication**: Disabled (open access for simplicity)
+- **Usage**:
+  ```bash
+  # Tag and push an image (no login required)
+  docker tag my-app:latest 10.0.0.248:5000/my-app:latest
+  docker push 10.0.0.248:5000/my-app:latest
+  
+  # Pull an image
+  docker pull 10.0.0.248:5000/my-app:latest
+  ```
+
+> 📖 **For detailed Docker Registry usage, CI/CD integration, troubleshooting, and advanced configuration, see [REGISTRY_GUIDE.md](REGISTRY_GUIDE.md)**
 
 #### Configure DNS
 
@@ -218,7 +266,26 @@ dig @10.0.0.250 -p 5353 google.com
 kubectl get configmap coredns -n kube-system -o yaml
 ```
 
-#### 5. Pi-hole Port Conflict Issues
+#### 5. Docker Registry Issues
+
+```bash
+# Check registry pod status
+kubectl get pods -n registry
+kubectl logs -n registry deployment/registry
+
+# Check registry service
+kubectl get service -n registry registry-service
+
+# Test registry connectivity
+curl -k https://registry.contdiscovery.lab/v2/
+# Should return: {}
+
+# Check authentication
+docker login 10.0.0.248:5000
+# Use the credentials from deployment output
+```
+
+#### 6. Pi-hole Port Conflict Issues
 
 If you see errors like `didn't have free ports for the requested pod ports`, this means port 53 is already in use:
 
@@ -294,6 +361,49 @@ To add more services, create new tasks in the playbook:
     release_namespace: my-namespace
     create_namespace: true
     kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+```
+
+### Using Docker Registry in Your Projects
+
+1. **Build and push your project images**:
+```bash
+# Build your application
+docker build -t my-app:v1.0.0 .
+
+# Tag for your registry
+docker tag my-app:v1.0.0 10.0.0.248:5000/my-app:v1.0.0
+
+# Push (no login required)
+docker push 10.0.0.248:5000/my-app:v1.0.0
+```
+
+2. **Use images in Kubernetes manifests**:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: my-app
+        image: 10.0.0.248:5000/my-app:v1.0.0
+        ports:
+        - containerPort: 8080
+```
+
+3. **No authentication required**:
+```bash
+# Registry runs with open access - no secrets needed
+# Images can be pulled directly without authentication
 ```
 
 ### Scaling to Multiple Nodes

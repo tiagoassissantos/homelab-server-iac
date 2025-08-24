@@ -29,3 +29,9 @@ pihole_dns2: "1.1.1.1"
 argo_namespace: "argo"
 argo_chart_version: "0.45.22" # chart version (iohub?). We'll pull from argo repo
 argo_lb_ip: "10.0.0.249"
+
+# === Docker Registry ===
+registry_namespace: "registry"
+registry_lb_ip: "10.0.0.248"
+registry_host: "registry.{{ base_domain }}"
+registry_storage_size: "20Gi"

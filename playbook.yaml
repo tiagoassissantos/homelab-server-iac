@@ -105,6 +105,9 @@
     # === Install cert-manager ===
     - include_tasks: templates/install_cert_manager.yaml
 
+    # === Install Docker Registry ===
+    - include_tasks: templates/install_registry.yaml
+
     # === Install Pi-hole ===
     - include_tasks: templates/install_pihole.yaml
 
