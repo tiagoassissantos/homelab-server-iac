@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: build-garage-genie-
+spec:
+  entrypoint: build-docker-image
+  arguments:
+    parameters:
+      - name: image_name
+        value: "garage-genie"
+      - name: image_tag
+        value: "latest"
+      - name: registry
+        value: "10.0.0.248"
+  templates:
+    - name: build-docker-image
+      inputs:
+        parameters:
+          - name: image_name
+          - name: image_tag
+          - name: registry
+      container:
+        image: moby/buildkit:latest
+        command: ["buildctl-daemonless.sh"]
+        args:
+          - "build"
+          - "--frontend=dockerfile.v0"
+          - "--local=context=/src"
+          - "--local=dockerfile=/src"
+          - "--output=type=image,name={{inputs.parameters.registry}}/{{inputs.parameters.image_name}}:{{inputs.parameters.image_tag}},push=true"
+        volumeMounts:
+          - name: src
+            mountPath: /src
+      volumes:
+        - name: src
+          persistentVolumeClaim:
+            claimName: garage-genie-src-pvc
