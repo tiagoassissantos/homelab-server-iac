@@ -1,0 +1,3 @@
+---
+- name: Install Argo Workflows
+  ansible.builtin.import_tasks: "{{ playbook_dir | dirname }}/templates/install_argo_workflows.yaml"

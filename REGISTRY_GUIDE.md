@@ -20,10 +20,10 @@ To install only the Docker Registry (assuming k3s is already configured):
 
 ```bash
 # Install registry only
-ansible-playbook -i inventory/hosts.ini playbook-registry.yaml
+ansible-playbook -i inventories/prod/hosts.ini playbooks/platform.yml --tags registry
 
 # Or install as part of the full stack
-ansible-playbook -i inventory/hosts.ini playbook.yaml
+ansible-playbook -i inventories/prod/hosts.ini playbooks/platform.yml
 ```
 
 ### 2. Get Registry Information

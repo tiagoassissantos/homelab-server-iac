@@ -1,0 +1,30 @@
+---
+- name: Ensure metrics-server is present (k3s bundles it)
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: metrics-server
+    namespace: kube-system
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: ms
+  failed_when: false
+
+- name: Patch metrics-server for kubelet TLS if needed
+  when: (ms.resources | length) > 0
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: metrics-server
+        namespace: kube-system
+      spec:
+        template:
+          spec:
+            containers:
+              - name: metrics-server
+                args:
+                  - --kubelet-insecure-tls
+                  - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+

@@ -30,11 +30,10 @@
       if [ -e /sbin/ip6tables-nft ]; then update-alternatives --set ip6tables /sbin/ip6tables-nft || true; fi
     fi
 
-- name: Stop nftables service before flushing
-  service:
-    name: nftables
-    state: stopped
-  ignore_errors: true
+- name: Stop nftables service before flushing (OpenRC)
+  ansible.builtin.shell: rc-service nftables stop || true
+  args:
+    executable: /bin/sh
 
 - name: Flush all existing nftables rules
   tags: [flush_fw_rules]
@@ -169,16 +168,22 @@
         }
       }
 
-- name: Enable and start nftables with new configuration
+- name: Enable nftables at boot (OpenRC)
   tags: [enable_fw_rules]
-  service:
-    name: nftables
-    enabled: yes
-    state: started
+  ansible.builtin.shell: rc-update add nftables default || true
+  args:
+    executable: /bin/sh
 
-- name: Wait for nftables service to be ready
-  wait_for:
-    timeout: 15
+- name: Start nftables with new configuration (OpenRC)
+  tags: [enable_fw_rules]
+  ansible.builtin.shell: rc-service nftables start || true
+  args:
+    executable: /bin/sh
+
+- name: Verify nftables service state (OpenRC)
+  ansible.builtin.shell: rc-service -l | grep -q '^nftables$'
+  register: nftables_list
+  changed_when: false
 
 - name: Verify K3s nftables rules are loaded
   shell: |

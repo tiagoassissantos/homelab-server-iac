@@ -1,0 +1,38 @@
+---
+- name: Ensure outputs directory exists (local)
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ playbook_dir | dirname }}/../outputs"
+    state: directory
+    mode: "0755"
+
+- name: Render environment outputs to JSON (local)
+  delegate_to: localhost
+  vars:
+    out_file: "{{ playbook_dir | dirname }}/../outputs/prod.json"
+  ansible.builtin.copy:
+    dest: "{{ out_file }}"
+    mode: "0644"
+    content: |
+      {
+        "cluster_name": "{{ cluster_name }}",
+        "kubeconfig_path": "{{ kubeconfig_path }}",
+        "default_storage_class": "{{ default_storage_class }}",
+        "ingress_class": "{{ ingress_controller }}",
+        "domain": "{{ dns.domain if dns is defined and dns.domain is defined else '' }}",
+        "registry": {
+          "url": "https://{{ registry_host }}",
+          "host": "{{ registry_lb_ip }}",
+          "port": 5000,
+          "tls": true
+        },
+        "cert_manager": {
+          "issuer_kind": "ClusterIssuer",
+          "issuer_name": "{{ cert_manager_issuer_name | default('selfsigned-issuer') }}"
+        },
+        "argo": {
+          "namespace": "{{ argo_namespace }}",
+          "server_host": "{{ argo_host }}"
+        }
+      }
+

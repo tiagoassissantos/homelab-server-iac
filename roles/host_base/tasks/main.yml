@@ -1,0 +1,97 @@
+---
+- name: Ensure timezone is set
+  when: timezone is defined
+  ansible.builtin.command: timedatectl set-timezone {{ timezone }}
+  changed_when: false
+  ignore_errors: true
+
+- name: Disable swap if requested
+  when: disable_swap | bool
+  ansible.builtin.command: swapoff -a
+  changed_when: false
+  ignore_errors: true
+
+- name: Update apk cache (Alpine)
+  when: ansible_distribution == 'Alpine'
+  community.general.apk:
+    update_cache: true
+
+- name: Install base packages (Alpine)
+  when: ansible_distribution == 'Alpine'
+  community.general.apk:
+    name:
+      - curl
+      - wget
+      - git
+      - python3
+      - py3-pip
+      - py3-yaml
+      - py3-kubernetes
+      - py3-cryptography
+      - py3-setuptools
+      - openssl
+      - ca-certificates
+      - nftables
+      - cni-plugins
+      - containerd
+      - runc
+      - zsh
+      - shadow
+      - bash
+    state: present
+    update_cache: true
+
+- name: Change login shell to zsh for user
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    shell: /bin/zsh
+  ignore_errors: true
+
+- name: Install oh-my-zsh (clone)
+  become: true
+  become_user: "{{ ansible_user }}"
+  ansible.builtin.git:
+    repo: https://github.com/ohmyzsh/ohmyzsh.git
+    dest: "/home/{{ ansible_user }}/.oh-my-zsh"
+    version: master
+    update: no
+  when: ansible_distribution == 'Alpine'
+
+- name: Ensure .zshrc present with robbyrussell theme
+  become: true
+  become_user: "{{ ansible_user }}"
+  ansible.builtin.copy:
+    dest: "/home/{{ ansible_user }}/.zshrc"
+    mode: "0644"
+    force: false
+    content: |
+      export ZSH="$HOME/.oh-my-zsh"
+      ZSH_THEME="robbyrussell"
+      plugins=(git)
+      source $ZSH/oh-my-zsh.sh
+
+- name: Load required kernel modules now
+  ansible.builtin.shell: |
+    modprobe overlay || true
+    modprobe br_netfilter || true
+  args:
+    executable: /bin/sh
+  ignore_errors: true
+
+- name: Ensure kernel modules load on boot (Alpine /etc/modules)
+  ansible.builtin.blockinfile:
+    path: /etc/modules
+    create: true
+    mode: "0644"
+    block: |
+      overlay
+      br_netfilter
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - k3s modules"
+
+- name: Apply kernel/sysctl settings for k3s
+  ansible.builtin.include_tasks: "{{ playbook_dir | dirname }}/templates/configure_sysctl_k3s.yaml"
+  when: lookup('ansible.builtin.fileglob', playbook_dir | dirname ~ '/templates/configure_sysctl_k3s.yaml') | length > 0
+
+- name: Configure firewall (nftables) for Kubernetes/MetalLB
+  ansible.builtin.include_tasks: "{{ playbook_dir | dirname }}/templates/configure_firewall.yaml"
+  when: lookup('ansible.builtin.fileglob', playbook_dir | dirname ~ '/templates/configure_firewall.yaml') | length > 0

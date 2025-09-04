@@ -1,0 +1,80 @@
+cluster_name: "home-k3s"
+# Primary kubeconfig path used by roles/templates
+kubeconfig_path: "/home/{{ ansible_user }}/.kube/config"
+
+# OS/base
+timezone: "America/Sao_Paulo"
+disable_swap: true
+
+# Ingress (choose one)
+ingress_controller: "traefik"  # or "nginx"
+
+# MetalLB
+metallb:
+  address_pools:
+    - name: default
+      # Keep aligned with existing var below
+      cidr: ["10.0.0.0/24"]
+
+# DNS/Domain for ingress
+dns:
+  domain: "contdiscovery.lab"
+
+# cert-manager
+cert_manager:
+  issuer_kind: "ClusterIssuer"
+  issuer_name: "selfsigned-issuer"
+
+# Registry
+registry:
+  host: "registry.contdiscovery.lab"
+  port: 5000
+  tls: true
+  ingress:
+    enabled: true
+    host: "registry.contdiscovery.lab"
+    class: "traefik"
+
+# Storage
+default_storage_class: "local-path"
+
+# Argo Workflows
+argo:
+  namespace: "argo"
+  server_ingress_host: "argo.contdiscovery.lab"
+  ingress_class: "traefik"
+
+# --- Legacy/compat variables used by existing templates ---
+# k3s
+k3s_version: v1.33.3+k3s1
+k3s_channel: stable
+k3s_install_extra_args: "--write-kubeconfig-mode 644 --disable servicelb"
+
+# MetalLB (existing template expects a range string)
+metallb_version: 0.15.2
+metallb_address_pool: 10.0.0.101-10.0.0.250
+
+# TLS mode for cert-manager issuer
+tls_mode: "selfsigned"  # options: letsencrypt | selfsigned
+
+# Pi-hole (optional)
+pihole_namespace: "pihole"
+pihole_lb_ip: "10.0.0.250"
+pihole_host: "pihole.contdiscovery.lab"
+pihole_dns_port: 5353
+pihole_password: "{{ lookup('password', '/dev/null length=16') }}"
+pihole_dns1: "8.8.8.8"
+pihole_dns2: "1.1.1.1"
+
+# Argo Workflows
+argo_namespace: "argo"
+argo_chart_version: "0.45.22"
+argo_lb_ip: "10.0.0.249"
+argo_host: "argo.contdiscovery.lab"
+
+# Docker Registry
+registry_namespace: "registry"
+registry_lb_ip: "10.0.0.248"
+registry_host: "registry.contdiscovery.lab"
+registry_storage_size: "20Gi"
+

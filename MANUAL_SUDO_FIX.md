@@ -136,7 +136,7 @@ Once sudo is working, you can proceed with the Ansible deployment:
 ansible masters -m ping
 
 # Run the full deployment
-ansible-playbook -i inventory/hosts.ini playbook.yaml
+ansible-playbook -i inventories/prod/hosts.ini playbooks/platform.yml
 
 # Or use the deployment script
 ./deploy.sh
@@ -147,7 +147,7 @@ ansible-playbook -i inventory/hosts.ini playbook.yaml
 If you prefer to keep the password prompt (more secure), you can run Ansible with:
 
 ```bash
-ansible-playbook -i inventory/hosts.ini playbook.yaml --ask-become-pass
+ansible-playbook -i inventories/prod/hosts.ini playbooks/platform.yml --ask-become-pass
 ```
 
 This will prompt you for the sudo password during execution.

@@ -1,0 +1,30 @@
+- name: Validate cluster
+  hosts: masters
+  gather_facts: false
+  tasks:
+    - name: Nodes Ready
+      kubernetes.core.k8s_info:
+        kind: Node
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: nodes
+
+    - name: Assert at least 1 Ready node
+      assert:
+        that: >
+          {{ nodes.resources | selectattr('status.conditions','defined')
+             | selectattr('status.conditions','selectattr','type','equalto','Ready')
+             | map(attribute='status.conditions') | flatten
+             | selectattr('type','equalto','Ready')
+             | selectattr('status','equalto','True') | list | length >= 1 }}
+
+    - name: Default StorageClass present
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: sc
+
+    - name: Assert a default StorageClass exists
+      assert:
+        that: "{{ sc.resources | selectattr('metadata.annotations.\"storageclass.kubernetes.io/is-default-class\"','equalto','true') | list | length >= 1 }}"
+

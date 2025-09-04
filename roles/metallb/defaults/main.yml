@@ -1,0 +1,4 @@
+---
+metallb_version: 0.15.2
+metallb_address_pool: 10.0.0.101-10.0.0.250
+

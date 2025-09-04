@@ -1,0 +1,3 @@
+---
+- name: Install k3s server and configure kubeconfig
+  ansible.builtin.include_tasks: "{{ playbook_dir | dirname }}/templates/install_k3s.yaml"

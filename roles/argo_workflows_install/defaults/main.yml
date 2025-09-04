@@ -1,0 +1,6 @@
+---
+argo_namespace: argo
+argo_chart_version: "0.45.22"
+argo_lb_ip: "10.0.0.249"
+argo_host: "argo.contdiscovery.lab"
+

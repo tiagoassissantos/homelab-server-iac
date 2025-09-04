@@ -1,0 +1,4 @@
+---
+- name: Deploy internal registry (Deployment/Service/Ingress)
+  ansible.builtin.include_tasks: "{{ playbook_dir | dirname }}/templates/install_registry.yaml"
+

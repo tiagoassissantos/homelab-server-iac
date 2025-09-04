@@ -1,0 +1,43 @@
+---
+- name: Ensure default StorageClass is set to {{ default_storage_class }}
+  vars:
+    desired: "{{ default_storage_class }}"
+  block:
+    - name: Get StorageClasses
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: sc
+
+    - name: Determine if desired default is already set
+      set_fact:
+        sc_default_ok: >-
+          {{ sc.resources | selectattr('metadata.annotations.\"storageclass.kubernetes.io/is-default-class\"','equalto','true')
+             | map(attribute='metadata.name') | list | first == desired }}
+
+    - name: Clear existing default StorageClass annotations
+      when: not sc_default_ok | bool
+      kubernetes.core.k8s:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "{{ item.metadata.name }}"
+        definition:
+          metadata:
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "false"
+      loop: "{{ sc.resources | selectattr('metadata.annotations.\"storageclass.kubernetes.io/is-default-class\"','defined') | list }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+
+    - name: Mark desired StorageClass as default
+      when: not sc_default_ok | bool
+      kubernetes.core.k8s:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "{{ desired }}"
+        definition:
+          metadata:
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "true"
+

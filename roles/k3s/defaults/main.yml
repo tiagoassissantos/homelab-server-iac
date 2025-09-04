@@ -1,0 +1,5 @@
+---
+k3s_version: v1.33.3+k3s1
+k3s_channel: stable
+k3s_install_extra_args: "--write-kubeconfig-mode 644 --disable servicelb"
+

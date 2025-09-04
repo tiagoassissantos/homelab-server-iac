@@ -4,3 +4,5 @@ collections:
     version: ">=2.3.0"
   - name: community.general
     version: ">=5.0.0"
+  - name: ansible.posix
+  - name: community.kubernetes

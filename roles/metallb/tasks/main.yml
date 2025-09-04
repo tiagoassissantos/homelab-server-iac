@@ -1,0 +1,4 @@
+---
+- name: Install and configure MetalLB
+  ansible.builtin.include_tasks: "{{ playbook_dir | dirname }}/templates/install_metallb.yaml"
+

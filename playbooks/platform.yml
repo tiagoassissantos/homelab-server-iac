@@ -1,0 +1,27 @@
+- name: Host base prep
+  hosts: all
+  become: true
+  roles:
+    - { role: host_base, tags: ["host_base"] }
+
+- name: Bootstrap k3s cluster
+  hosts: k3s
+  become: true
+  roles:
+    - { role: k3s, tags: ["k3s"] }
+
+- name: Cluster add-ons (run on master)
+  hosts: masters
+  become: true
+  vars:
+    kubeconfig_path: "{{ kubeconfig_path }}"
+  roles:
+    - { role: metallb,                tags: ["metallb"] }
+    - { role: ingress,                tags: ["ingress"] }
+    - { role: cert_manager,           tags: ["cert_manager"] }
+    - { role: registry,               tags: ["registry"] }
+    - { role: storage_class,          tags: ["storage"] }
+    - { role: monitoring,             tags: ["monitoring"] }
+    - { role: argo_workflows_install, tags: ["argo"] }
+    - { role: outputs,                tags: ["outputs"] }
+

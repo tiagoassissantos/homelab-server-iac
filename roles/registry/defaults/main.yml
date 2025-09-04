@@ -1,0 +1,6 @@
+---
+registry_namespace: registry
+registry_lb_ip: "10.0.0.248"
+registry_host: "registry.contdiscovery.lab"
+registry_storage_size: "20Gi"
+

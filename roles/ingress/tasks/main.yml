@@ -1,0 +1,24 @@
+---
+- name: Use built-in Traefik (k3s default)
+  when: ingress_controller | lower == 'traefik'
+  ansible.builtin.debug:
+    msg: "Traefik is enabled by default in k3s; no extra install."
+
+- name: Install NGINX Ingress via Helm
+  when: ingress_controller | lower == 'nginx'
+  block:
+    - name: Add ingress-nginx Helm repo
+      kubernetes.core.helm_repository:
+        name: ingress-nginx
+        repo_url: https://kubernetes.github.io/ingress-nginx
+        kubeconfig: "{{ kubeconfig_path }}"
+
+    - name: Install ingress-nginx controller
+      kubernetes.core.helm:
+        name: ingress-nginx
+        chart_ref: ingress-nginx/ingress-nginx
+        chart_version: "{{ nginx_chart_version }}"
+        release_namespace: ingress-nginx
+        create_namespace: true
+        kubeconfig: "{{ kubeconfig_path }}"
+

@@ -1,0 +1,5 @@
+---
+tls_mode: selfsigned  # options: selfsigned | letsencrypt
+cert_manager_issuer_name: selfsigned-issuer
+cert_manager_issuer_kind: ClusterIssuer
+
