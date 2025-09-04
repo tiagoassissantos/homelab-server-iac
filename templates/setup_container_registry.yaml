@@ -1,0 +1,231 @@
+- name: Check if container registry is accessible
+  uri:
+    url: "http://{{ container_registry_ip }}:{{ container_registry_port }}/v2/"
+    method: GET
+    status_code: 200
+  register: registry_check
+  ignore_errors: yes
+
+- name: Display registry status
+  debug:
+    msg: |
+      Registry Status:
+      {% if registry_check.status == 200 %}
+      ✅ Container registry is accessible at {{ container_registry_url }}
+      {% else %}
+      ❌ Container registry is NOT accessible at {{ container_registry_url }}
+      Status Code: {{ registry_check.status | default('Connection failed') }}
+      {% endif %}
+
+- name: Fail if registry is not accessible
+  fail:
+    msg: |
+      Container registry at {{ container_registry_url }} is not accessible!
+
+      To set up a container registry, you can run:
+
+      # Using Docker:
+      docker run -d -p {{ container_registry_port }}:5000 --restart=always --name registry registry:2
+
+      # Using Podman:
+      podman run -d -p {{ container_registry_port }}:5000 --restart=always --name registry registry:2
+
+      # Using k3s (if you want the registry in the cluster):
+      kubectl create namespace container-registry
+      kubectl create deployment registry --image=registry:2 -n container-registry
+      kubectl expose deployment registry --port=5000 --target-port=5000 --type=LoadBalancer --load-balancer-ip={{ container_registry_ip }} -n container-registry
+  when: registry_check.status != 200
+
+- name: Configure containerd for insecure registry
+  blockinfile:
+    path: /etc/rancher/k3s/registries.yaml
+    create: yes
+    block: |
+      mirrors:
+        "{{ container_registry_url }}":
+          endpoint:
+            - "http://{{ container_registry_url }}"
+      configs:
+        "{{ container_registry_url }}":
+          tls:
+            insecure_skip_verify: true
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - Container Registry Configuration"
+  notify: restart k3s
+  when: registry_check.status == 200
+
+- name: Create registry verification script
+  copy:
+    dest: "/home/{{ ansible_user }}/scripts/verify-registry.sh"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      set -e
+
+      REGISTRY_URL="{{ container_registry_url }}"
+
+      echo "🔍 Verifying Container Registry at $REGISTRY_URL"
+      echo "================================================"
+
+      # Check registry API
+      echo "📡 Checking registry API..."
+      if curl -s "http://$REGISTRY_URL/v2/" > /dev/null; then
+        echo "✅ Registry API is responding"
+      else
+        echo "❌ Registry API is not responding"
+        exit 1
+      fi
+
+      # List repositories
+      echo ""
+      echo "📦 Available repositories:"
+      CATALOG=$(curl -s "http://$REGISTRY_URL/v2/_catalog" | python3 -m json.tool)
+      echo "$CATALOG"
+
+      # Check garage-genie image if it exists
+      echo ""
+      echo "🏗️ Checking garage-genie image:"
+      if curl -s "http://$REGISTRY_URL/v2/garage-genie/tags/list" > /dev/null 2>&1; then
+        TAGS=$(curl -s "http://$REGISTRY_URL/v2/garage-genie/tags/list" | python3 -m json.tool)
+        echo "$TAGS"
+      else
+        echo "📝 No garage-genie image found (this is normal for first-time setup)"
+      fi
+
+      echo ""
+      echo "✅ Registry verification completed!"
+
+- name: Create registry cleanup script
+  copy:
+    dest: "/home/{{ ansible_user }}/scripts/registry-cleanup.sh"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+
+      REGISTRY_URL="{{ container_registry_url }}"
+
+      echo "🗑️ Registry Cleanup Tool"
+      echo "========================"
+      echo "Registry: $REGISTRY_URL"
+      echo ""
+
+      # List all repositories
+      echo "📦 Current repositories:"
+      curl -s "http://$REGISTRY_URL/v2/_catalog" | python3 -c "
+      import json, sys
+      try:
+          data = json.load(sys.stdin)
+          repos = data.get('repositories', [])
+          if repos:
+              for i, repo in enumerate(repos, 1):
+                  print(f'{i}. {repo}')
+          else:
+              print('No repositories found')
+      except:
+          print('Error reading registry catalog')
+      "
+
+      echo ""
+      echo "⚠️  Note: Docker Registry v2 doesn't support deletion via API by default."
+      echo "To clean up images, you would need to:"
+      echo "1. Stop the registry container"
+      echo "2. Remove files from the registry volume"
+      echo "3. Restart the registry"
+      echo ""
+      echo "For production use, consider using Harbor or another registry with cleanup features."
+
+- name: Test registry with k3s
+  block:
+    - name: Create test pod for registry access
+      kubernetes.core.k8s:
+        kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+        definition:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: registry-test-pod
+            namespace: default
+            labels:
+              app: registry-test
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: test-container
+                image: busybox:latest
+                command: ["sh", "-c"]
+                args:
+                  - |
+                    echo "Testing registry connectivity..."
+                    wget -qO- http://{{ container_registry_url }}/v2/ || exit 1
+                    echo "Registry connectivity test passed!"
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 60
+
+    - name: Get registry test results
+      kubernetes.core.k8s_info:
+        kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+        api_version: v1
+        kind: Pod
+        name: registry-test-pod
+        namespace: default
+      register: test_pod_info
+
+    - name: Show test results
+      debug:
+        msg: "✅ Registry connectivity test from k3s cluster: PASSED"
+      when: test_pod_info.resources[0].status.phase == "Succeeded"
+
+  always:
+    - name: Clean up test pod
+      kubernetes.core.k8s:
+        kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+        api_version: v1
+        kind: Pod
+        name: registry-test-pod
+        namespace: default
+        state: absent
+      ignore_errors: yes
+
+  when: registry_check.status == 200
+
+- name: Create registry information file
+  copy:
+    dest: "/home/{{ ansible_user }}/registry-info.txt"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+    content: |
+      Container Registry Information
+      =============================
+
+      Registry URL: {{ container_registry_url }}
+      Registry IP: {{ container_registry_ip }}
+      Registry Port: {{ container_registry_port }}
+
+      Configuration:
+      - Type: Docker Registry v2
+      - Protocol: HTTP (insecure)
+      - Architecture Support: ARM64
+
+      Verification:
+      - API Endpoint: http://{{ container_registry_url }}/v2/
+      - Catalog: http://{{ container_registry_url }}/v2/_catalog
+
+      Management Scripts:
+      - ~/scripts/verify-registry.sh - Check registry status
+      - ~/scripts/registry-cleanup.sh - Registry cleanup info
+
+      Docker Commands:
+      - Pull image: docker pull {{ container_registry_url }}/garage-genie:latest
+      - Push image: docker push {{ container_registry_url }}/garage-genie:latest
+
+      k3s Configuration:
+      - Insecure registry configured in /etc/rancher/k3s/registries.yaml
+      - Restart k3s if registry configuration changes
+  when: registry_check.status == 200
