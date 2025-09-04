@@ -8,14 +8,25 @@
         kubeconfig: "{{ kubeconfig_path }}"
       register: nodes
 
+    - name: Initialize ready node count
+      ansible.builtin.set_fact:
+        ready_node_count: 0
+
+    - name: Count nodes with Ready=True condition
+      ansible.builtin.set_fact:
+        ready_node_count: "{{ ready_node_count + 1 }}"
+      loop: "{{ nodes.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name | default('unknown') }}"
+      when:
+        - item.status is defined
+        - item.status.conditions is defined
+        - (item.status.conditions | selectattr('type','equalto','Ready') | selectattr('status','equalto','True') | list | length) > 0
+
     - name: Assert at least 1 Ready node
       assert:
-        that: >
-          {{ nodes.resources | selectattr('status.conditions','defined')
-             | selectattr('status.conditions','selectattr','type','equalto','Ready')
-             | map(attribute='status.conditions') | flatten
-             | selectattr('type','equalto','Ready')
-             | selectattr('status','equalto','True') | list | length >= 1 }}
+        that:
+          - ready_node_count | int >= 1
 
     - name: Default StorageClass present
       kubernetes.core.k8s_info:
@@ -24,7 +35,22 @@
         kubeconfig: "{{ kubeconfig_path }}"
       register: sc
 
+    - name: Initialize default StorageClass count
+      ansible.builtin.set_fact:
+        default_sc_count: 0
+
+    - name: Count default StorageClass resources
+      ansible.builtin.set_fact:
+        default_sc_count: "{{ default_sc_count + 1 }}"
+      loop: "{{ sc.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name | default('unknown') }}"
+      when:
+        - item.metadata is defined
+        - item.metadata.annotations is defined
+        - (item.metadata.annotations['storageclass.kubernetes.io/is-default-class'] | default('false') | lower) == 'true'
+
     - name: Assert a default StorageClass exists
       assert:
-        that: "{{ sc.resources | selectattr('metadata.annotations.\"storageclass.kubernetes.io/is-default-class\"','equalto','true') | list | length >= 1 }}"
-
+        that:
+          - default_sc_count | int >= 1

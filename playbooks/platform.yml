@@ -13,8 +13,6 @@
 - name: Cluster add-ons (run on master)
   hosts: masters
   become: true
-  vars:
-    kubeconfig_path: "{{ kubeconfig_path }}"
   roles:
     - { role: metallb,                tags: ["metallb"] }
     - { role: ingress,                tags: ["ingress"] }
@@ -24,4 +22,3 @@
     - { role: monitoring,             tags: ["monitoring"] }
     - { role: argo_workflows_install, tags: ["argo"] }
     - { role: outputs,                tags: ["outputs"] }
-

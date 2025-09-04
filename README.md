@@ -51,6 +51,38 @@ Notes
 - The registry defaults to a simple, internal deployment with TLS via cert-manager (self-signed by default). See `docs/runbook.md` to switch issuers.
 - `docs/outputs.md` describes the JSON contract emitted to `outputs/prod.json`.
 
+
+## Make Targets and Custom Tags
+
+Targets
+- `make install`: installs Ansible collections from `requirements.yml`.
+- `make lint`: runs ansible-lint.
+- `make syntax`: syntax-checks `playbooks/site.yml`.
+- `make bootstrap`: runs platform bootstrap roles via tags.
+- `make addons`: runs add-on roles via tags.
+- `make checks`: runs post-deploy checks.
+
+Configurable variables
+- `INVENTORY` (default: `inventories/prod/hosts.ini`)
+- `PLAYBOOK_PLATFORM` (default: `playbooks/platform.yml`)
+- `PLAYBOOK_SITE` (default: `playbooks/site.yml`)
+- `PLAYBOOK_CHECKS` (default: `playbooks/checks.yml`)
+- `BOOTSTRAP_TAGS` (default: `host_base,k3s,metallb,ingress,cert_manager,registry,storage`)
+- `ADDON_TAGS` (default: `monitoring,argo,outputs`)
+
+Examples
+- Run only Argo in addons:
+  - `make addons ADDON_TAGS="argo"`
+- Run only Outputs generation:
+  - `make addons ADDON_TAGS="outputs"`
+- Run Monitoring + Argo together:
+  - `make addons ADDON_TAGS="monitoring,argo"`
+- Limit bootstrap to k3s + MetalLB only:
+  - `make bootstrap BOOTSTRAP_TAGS="k3s,metallb"`
+- Use a different inventory file:
+  - `make bootstrap INVENTORY=inventories/staging/hosts.ini`
+
+
 ---
 
 This Ansible playbook configures an Alpine Linux server (e.g., v3.22) running on ARM64 with a complete k3s Kubernetes cluster. It establishes a GitOps-ready platform with Argo CD, Argo Workflows, a private Docker Registry, and other core services.

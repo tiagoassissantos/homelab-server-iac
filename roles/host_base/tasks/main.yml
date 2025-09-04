@@ -1,9 +1,29 @@
 ---
-- name: Ensure timezone is set
-  when: timezone is defined
-  ansible.builtin.command: timedatectl set-timezone {{ timezone }}
-  changed_when: false
-  ignore_errors: true
+- name: Ensure tzdata is installed (Alpine)
+  when: ansible_distribution == 'Alpine'
+  community.general.apk:
+    name: tzdata
+    state: present
+
+- name: Configure timezone on Alpine
+  when: ansible_distribution == 'Alpine' and (timezone is defined)
+  block:
+    - name: Write /etc/timezone
+      ansible.builtin.copy:
+        dest: /etc/timezone
+        content: "{{ timezone }}\n"
+        mode: "0644"
+    - name: Link /etc/localtime to selected zoneinfo
+      ansible.builtin.file:
+        src: "/usr/share/zoneinfo/{{ timezone }}"
+        dest: /etc/localtime
+        state: link
+        force: true
+
+- name: Ensure timezone is set (non-Alpine)
+  when: timezone is defined and ansible_distribution != 'Alpine'
+  ansible.builtin.timezone:
+    name: "{{ timezone }}"
 
 - name: Disable swap if requested
   when: disable_swap | bool

@@ -10,25 +10,43 @@
         kubeconfig: "{{ kubeconfig_path }}"
       register: sc
 
+    - name: Gather current default StorageClass names
+      ansible.builtin.set_fact:
+        current_default_scs: []
+
+    - name: Collect current default StorageClass names
+      ansible.builtin.set_fact:
+        current_default_scs: "{{ current_default_scs + [ item.metadata.name ] }}"
+      loop: "{{ sc.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name | default('unknown') }}"
+      when:
+        - item.metadata is defined
+        - item.metadata.annotations is defined
+        - (item.metadata.annotations['storageclass.kubernetes.io/is-default-class'] | default('false') | lower) == 'true'
+
     - name: Determine if desired default is already set
-      set_fact:
-        sc_default_ok: >-
-          {{ sc.resources | selectattr('metadata.annotations.\"storageclass.kubernetes.io/is-default-class\"','equalto','true')
-             | map(attribute='metadata.name') | list | first == desired }}
+      ansible.builtin.set_fact:
+        sc_default_ok: "{{ desired in (current_default_scs | default([])) }}"
 
     - name: Clear existing default StorageClass annotations
-      when: not sc_default_ok | bool
       kubernetes.core.k8s:
         api_version: storage.k8s.io/v1
         kind: StorageClass
         name: "{{ item.metadata.name }}"
+        kubeconfig: "{{ kubeconfig_path }}"
         definition:
           metadata:
             annotations:
               storageclass.kubernetes.io/is-default-class: "false"
-      loop: "{{ sc.resources | selectattr('metadata.annotations.\"storageclass.kubernetes.io/is-default-class\"','defined') | list }}"
+      loop: "{{ sc.resources | default([]) }}"
       loop_control:
         label: "{{ item.metadata.name }}"
+      when:
+        - not sc_default_ok | bool
+        - item.metadata is defined
+        - item.metadata.annotations is defined
+        - (item.metadata.annotations['storageclass.kubernetes.io/is-default-class'] | default('false') | lower) == 'true'
 
     - name: Mark desired StorageClass as default
       when: not sc_default_ok | bool
@@ -36,8 +54,8 @@
         api_version: storage.k8s.io/v1
         kind: StorageClass
         name: "{{ desired }}"
+        kubeconfig: "{{ kubeconfig_path }}"
         definition:
           metadata:
             annotations:
               storageclass.kubernetes.io/is-default-class: "true"
-
