@@ -1,11 +1,6 @@
 ---
 # === Install Docker Registry ===
 
-#- name: Ensure htpasswd is available
-#  apk:
-#    name: apache2-utils
-#    state: present
-
 - name: Create registry namespace
   kubernetes.core.k8s:
     name: "{{ registry_namespace }}"

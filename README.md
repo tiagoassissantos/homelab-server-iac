@@ -1,14 +1,16 @@
 # Homelab Server Infrastructure as Code
 
-This Ansible playbook configures an Alpine Linux server (e.g., v3.22) running on ARM64 (Qualcomm Snapdragon 732G) with a complete k3s Kubernetes cluster, including Pi-hole DNS server and Argo Workflows.
+This Ansible playbook configures an Alpine Linux server (e.g., v3.22) running on ARM64 with a complete k3s Kubernetes cluster. It establishes a GitOps-ready platform with Argo CD, Argo Workflows, a private Docker Registry, and other core services.
 
 ## Features
 
 - ✅ **Shell Setup**: Installs and configures zsh with oh-my-zsh
 - ✅ **k3s Kubernetes**: Single-node k3s cluster with Traefik ingress
 - ✅ **MetalLB**: Load balancer for bare metal Kubernetes
-- ✅ **Docker Registry**: Private container registry for project images
+- ✅ **Argo CD**: Declarative, GitOps continuous delivery tool.
+- ✅ **Argo Workflows**: Workflow orchestration for CI and other tasks.
 - ✅ **Pi-hole**: Network-wide ad blocking and DNS server
+- ✅ **Docker Registry**: Private container registry for project images
 - ✅ **Argo Workflows**: Workflow orchestration with HTTPS access
 - ✅ **cert-manager**: Automatic TLS certificate management
 - ✅ **Firewall**: Properly configured iptables for k3s
@@ -19,14 +21,19 @@ This Ansible playbook configures an Alpine Linux server (e.g., v3.22) running on
 ┌─────────────────────────────────────────────────────────────┐
 │                    Alpine Linux Server                      │
 │  ┌────────────────────────────────────────────────────────┐ │
-│  │                   k3s Cluster                          │ │
+│  │                   k3s GitOps Platform                  │ │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │ │
-│  │  │   Pi-hole   │  │    Argo     │  │   cert-manager  │ │ │
-│  │  │ (DNS Server)│  │ Workflows   │  │  (TLS Certs)    │ │ │
+│  │  │   Pi-hole   │  │   Argo CD   │  │   cert-manager  │ │ │
+│  │  │ (DNS Server)│  │ (GitOps CD) │  │  (TLS Certs)    │ │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────────┘ │ │
+│  │  ┌─────────────┐  ┌─────────────┐                     │ │
+│  │  │ Docker      │  │    Argo     │                     │ │
+│  │  │ Registry    │  │ Workflows   │                     │ │
+│  │  └─────────────┘  └─────────────┘                     │ │
 │  │  └─────────────┘  └─────────────┘  └─────────────────┘ │ │
 │  │  ┌─────────────┐                                       │ │
-│  │  │   Docker    │                                       │ │
-│  │  │  Registry   │                                       │ │
+│  │  │ Docker      │                                       │ │
+│  │  │ Registry    │                                       │ │
 │  │  └─────────────┘                                       │ │
 │  │  ┌───────────────────────────────────────────────────┐ │ │
 │  │  │              MetalLB Load Balancer                │ │ │
@@ -148,18 +155,6 @@ ansible-playbook -i inventory/hosts.ini playbook-registry.yaml
 
 The deployment will take approximately 15-30 minutes depending on your internet connection.
 
-### Helper Scripts
-
-The repository includes several helper scripts for Docker Registry management:
-
-```bash
-# Get registry connection details and credentials
-./get-registry-credentials.sh
-
-# Test registry functionality and connectivity
-./test-registry.sh
-```
-
 ## Post-Deployment
 
 ### Verify k3s Cluster
@@ -195,14 +190,14 @@ kubectl get services --all-namespaces
   # Tag and push an image (no login required)
   docker tag my-app:latest 10.0.0.248:5000/my-app:latest
   docker push 10.0.0.248:5000/my-app:latest
-  
+
   # Pull an image
   docker pull 10.0.0.248:5000/my-app:latest
   ```
 
 > 📖 **For detailed Docker Registry usage, CI/CD integration, troubleshooting, and advanced configuration, see [REGISTRY_GUIDE.md](REGISTRY_GUIDE.md)**
 
-#### Configure DNS
+### Configure DNS
 
 To use Pi-hole as your network DNS (note: Pi-hole runs on port 5353):
 
@@ -266,26 +261,7 @@ dig @10.0.0.250 -p 5353 google.com
 kubectl get configmap coredns -n kube-system -o yaml
 ```
 
-#### 5. Docker Registry Issues
-
-```bash
-# Check registry pod status
-kubectl get pods -n registry
-kubectl logs -n registry deployment/registry
-
-# Check registry service
-kubectl get service -n registry registry-service
-
-# Test registry connectivity
-curl -k https://registry.contdiscovery.lab/v2/
-# Should return: {}
-
-# Check authentication
-docker login 10.0.0.248:5000
-# Use the credentials from deployment output
-```
-
-#### 6. Pi-hole Port Conflict Issues
+#### 5. Pi-hole Port Conflict Issues
 
 If you see errors like `didn't have free ports for the requested pod ports`, this means port 53 is already in use:
 
@@ -316,6 +292,25 @@ kubectl delete pod -n pihole --force --grace-period=0 -l app=pihole
 ```
 
 **Note**: Pi-hole now runs on port 5353 externally to avoid conflicts with system DNS services.
+
+#### 6. Docker Registry Issues
+
+```bash
+# Check registry pod status
+kubectl get pods -n registry
+kubectl logs -n registry deployment/registry
+
+# Check registry service
+kubectl get service -n registry registry-service
+
+# Test registry connectivity
+curl -k https://registry.contdiscovery.lab/v2/
+# Should return: {}
+
+# Check authentication
+docker login 10.0.0.248:5000
+# Use the credentials from deployment output
+```
 
 ### Reset Cluster
 

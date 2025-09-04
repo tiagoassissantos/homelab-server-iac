@@ -138,6 +138,7 @@ spec:
 
 Since the registry runs without authentication, no image pull secrets are needed:
 
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -166,10 +167,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Build Docker image
       run: docker build -t my-app:${{ github.sha }} .
-    
+
     - name: Tag and Push
       run: |
         docker tag my-app:${{ github.sha }} 10.0.0.248:5000/my-app:${{ github.sha }}
@@ -246,10 +247,6 @@ kubectl get pods -n registry
 
 # Check service status
 kubectl get service -n registry registry-service
-
-# Get registry information
-./get-registry-credentials.sh
-```
 
 #### 2. Push/Pull Issues
 ```bash

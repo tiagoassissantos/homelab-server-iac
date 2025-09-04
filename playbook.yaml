@@ -126,3 +126,8 @@
         name: systemd-resolved
         state: restarted
       ignore_errors: true
+
+    - name: restart k3s
+      service:
+        name: k3s
+        state: restarted
