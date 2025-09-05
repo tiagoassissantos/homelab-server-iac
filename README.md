@@ -266,6 +266,50 @@ kubectl get services --all-namespaces
 - **URL**: `https://argo.contdiscovery.lab` (or `argo.{{ base_domain }}` depending on your configuration)
 - **Note**: Add this domain to your local hosts file or configure DNS
 
+##### Argo Token (Legacy Method)
+
+- Purpose: Create and fetch a ServiceAccount token when kubectl create token is unavailable (older clusters).
+- Scope: Example uses NS=argo and SA=argo-workflows-server. Adjust if your SA/namespace differ.
+
+- Set variables:
+  - NS=argo
+  - SA=argo-workflows-server
+
+- Create a bound token Secret:
+```shell
+kubectl -n $NS apply -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${SA}-token
+  annotations:
+    kubernetes.io/service-account.name: ${SA}
+type: kubernetes.io/service-account-token
+EOF
+```
+
+- Wait and fetch the token:
+  - sleep 5 # allow controller to populate the Secret
+  - kubectl -n $NS get secret ${SA}-token -o jsonpath='{.data.token}' | base64 -d; echo
+
+- Use the token:
+  - UI: paste into Argo Workflows login at https://<your-argo-host> (or http://10.0.0.249).
+  - CLI: argo login 10.0.0.249 --insecure --auth-mode=client --token "$(kubectl -n $NS get secret ${SA}-token -o jsonpath='{.data.token}' | base64 -d)"
+
+- Verify permissions:
+  - kubectl auth can-i list workflows.argoproj.io -n $NS --as=system:serviceaccount:${NS}:${SA}
+
+- Alternative (very old clusters with auto-generated SA token Secret):
+  - SECRET=$(kubectl -n $NS get sa $SA -o jsonpath='{.secrets[0].name}')
+kubectl -n $NS get secret "$SECRET" -o jsonpath='{.data.token}' | base64 -d; echo
+
+- Cleanup (recommended if token is one-off):
+  - kubectl -n $NS delete secret ${SA}-token
+
+- Notes:
+  - These legacy tokens do not expire; treat them like credentials and delete when done.
+  - On Kubernetes ≥ 1.24, prefer short‑lived tokens: kubectl -n $NS create token $SA --duration=24h.
+
 #### Docker Registry
 - **Internal URL**: `http://10.0.0.248:5000` (or whatever `registry_lb_ip` you set)
 - **External URL**: `https://registry.contdiscovery.lab` (or `registry.{{ base_domain }}`)
